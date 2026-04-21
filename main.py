@@ -58,6 +58,7 @@ def process_and_upload_excel_strict(file):
         "attendance_as_per_billing_period": "attendance_number",
         "check_a_b": "check_diff",
         "ssc_query_if_any": "ssc_query",
+        "Billing Cycle/ hours calculation as per billing period": "billing_cycle_calc"
     })
 
     for col in ["period_from", "period_to"]:
