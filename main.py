@@ -51,6 +51,7 @@ def process_and_upload_excel_strict(file):
         .str.lower()
         .str.replace(r"[^\w]+", "_", regex=True)
     )
+    df.columns = df.columns.str.strip("_")
 
     df = df.drop(columns=["unnamed_38", "key"], errors="ignore")
 
