@@ -4,6 +4,7 @@ import numpy as np
 from supabase import create_client
 
 st.set_page_config(layout="wide")
+
 st.title("Hour Recon Processor")
 
 # =========================
@@ -30,11 +31,7 @@ SHAP_COLUMNS = """LocationCode	Client Code	SoNo	ShapHours	NormalHours	OTHours"""
 # =========================
 def truncate_table(table_name):
     supabase = get_client()
-    try:
-        supabase.table(table_name).delete().neq("id", 0).execute()
-    except Exception as e:
-        st.error(f"❌ Failed to clear {table_name}: {e}")
-        st.stop()
+    supabase.table(table_name).delete().neq("id", 0).execute()
 
 def truncate_all():
     truncate_table("hour_recon")
@@ -54,6 +51,7 @@ def process_and_upload_excel_strict(file):
         .str.lower()
         .str.replace(r"[^\w]+", "_", regex=True)
     )
+    df.columns = df.columns.str.strip("_")
 
     df = df.drop(columns=["unnamed_38", "key"], errors="ignore")
 
@@ -98,10 +96,6 @@ def build_and_upload_pivot_from_cloud():
 
     df = pd.DataFrame(all_data)
 
-    if df.empty:
-        st.error("❌ Hour Recon table is empty")
-        st.stop()
-
     df = df.drop(columns=[
         "invoice_no","wf_taskid",
         "period_from","period_to",
@@ -142,7 +136,11 @@ def build_and_upload_pivot_from_cloud():
 def update_shap_hours_from_file(file):
     supabase = get_client()
 
-    df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
+    try:
+        df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
+    except Exception as e:
+        st.error("Error reading SHAP file")
+        st.stop()
 
     df.columns = (
         df.columns.astype(str)
@@ -159,17 +157,14 @@ def update_shap_hours_from_file(file):
         "shaphours":"shap_hours"
     })
 
-    required_cols = ["location", "customer_code", "order_no", "shap_hours"]
-    missing = [c for c in required_cols if c not in df.columns]
-    if missing:
-        st.error(f"❌ Missing columns: {missing}")
-        st.stop()
-
     for col in ["location", "customer_code", "order_no"]:
-        df[col] = df[col].astype(str).str.strip().str.lower()
-
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip().str.lower()
+    
     df["pivot_key"] = (
-        df["location"]+"_"+df["customer_code"]+"_"+df["order_no"]
+        df["location"].astype(str)+"_"+
+        df["customer_code"].astype(str)+"_"+
+        df["order_no"].astype(str)
     )
 
     df["shap_hours"] = pd.to_numeric(df["shap_hours"], errors="coerce")
@@ -187,10 +182,6 @@ def update_shap_hours_from_file(file):
         .execute().data
 
     pivot_df = pd.DataFrame(pivot)
-
-    if pivot_df.empty:
-        st.error("❌ Pivot table empty. Upload Hour Recon first.")
-        st.stop()
 
     merged = df.merge(pivot_df, on="pivot_key", how="left")
 
@@ -220,7 +211,6 @@ def update_shap_hours_from_file(file):
 
     final_df = final_df.replace({np.nan:None})
     final_df = final_df.drop(columns=["id"], errors="ignore")
-    final_df = final_df.drop_duplicates(subset=["pivot_key"])
 
     supabase.table("hour_recon_pivot").delete().neq("id",0).execute()
 
@@ -262,11 +252,12 @@ with tab1:
 
     st.divider()
 
-    try:
-        df = download_pivot()
-        st.download_button("Download Report", df.to_csv(index=False), "pivot.csv")
-    except Exception as e:
-        st.error(str(e))
+    if st.button("Download Report"):
+        try:
+            df = download_pivot()
+            st.download_button("Download Report", df.to_csv(index=False), "pivot.csv")
+        except Exception as e:
+            st.error(str(e))
 
 # =========================
 # TAB 2
@@ -302,12 +293,14 @@ with tab2:
 # TAB 3
 # =========================
 with tab3:
-    st.subheader("Guidelines")
+    st.subheader("What This Tool Does")
+    st.write("Processes Hour Recon data, builds pivot, and integrates SHAP hours.")
 
-    st.write("### Hour Recon Header")
-    st.code(HOUR_RECON_COLUMNS)
+    st.subheader("How to Use")
+    st.write("Upload files → Run → Download output")
 
-    st.write("### SHAP Header")
-    st.code(SHAP_COLUMNS)
+    st.subheader("Output Details")
+    st.write("Aggregated by Location → Customer → Order with SHAP splits.")
 
-    st.write("Upload → Process → Download. SHAP fills in 3 stages only.")
+    st.subheader("Financial Logic")
+    st.write("Variance = Billed Hours − Performed Hours. SHAP stored in 3 slots.")
