@@ -130,7 +130,11 @@ def build_and_upload_pivot_from_cloud():
 def update_shap_hours_from_file(file):
     supabase = get_client()
 
-    df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
+    try:
+        df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
+    except Exception as e:
+        st.error("Error reading SHAP file")
+        st.stop()
 
     df.columns = (
         df.columns.astype(str)
@@ -213,98 +217,80 @@ def download_pivot():
     return pd.DataFrame(data)
 
 # =========================
-# 📂 FILE UPLOAD SECTION
+# 🌐 TABS
 # =========================
-st.header("Upload Files")
-
-hour_file = st.file_uploader("Upload Hour Recon Excel (.xlsx)", type=["xlsx"])
-st.caption("Columns must match:")
-st.code(HOUR_RECON_COLUMNS)
-
-shap_file = st.file_uploader("Upload SHAP File (.csv / .xlsx)", type=["csv","xlsx"])
-st.caption("Columns must match:")
-st.code(SHAP_COLUMNS)
-
-run = st.button("Run")
+tab1, tab2, tab3 = st.tabs(["SHAP + Download", "Hour Recon Upload", "Guidelines"])
 
 # =========================
-# 🧾 LOG CONTAINER
+# TAB 1
 # =========================
-log_container = st.container()
+with tab1:
+    st.subheader("SHAP Upload")
 
-if run:
-    with log_container:
+    shap_file = st.file_uploader("Upload SHAP File (.csv / .xlsx)", type=["csv","xlsx"])
+    st.caption(SHAP_COLUMNS)
 
-        if not hour_file and not shap_file:
-            st.error("Please upload at least one file")
-            st.stop()
-
-        try:
-            if hour_file:
-                st.info("Clearing tables...")
-                truncate_all()
-
-                st.info("Processing Hour Recon...")
-                process_and_upload_excel_strict(hour_file)
-
-                st.info("Building Pivot...")
-                build_and_upload_pivot_from_cloud()
-
-            if shap_file:
-                st.info("Updating SHAP...")
+    if st.button("Run SHAP Upload"):
+        if shap_file:
+            try:
                 update_shap_hours_from_file(shap_file)
+                st.success("SHAP Uploaded")
+            except Exception as e:
+                st.error(str(e))
+        else:
+            st.error("Upload SHAP file")
 
-            st.success("Processing Completed")
+    st.divider()
 
+    if st.button("Download Pivot"):
+        try:
             df = download_pivot()
-            st.download_button(
-                "Download Report",
-                df.to_csv(index=False),
-                "pivot.csv",
-                mime="text/csv"
-            )
-
+            st.download_button("Download Report", df.to_csv(index=False), "pivot.csv")
         except Exception as e:
             st.error(str(e))
-            st.stop()
 
 # =========================
-# 📘 DOCUMENTATION
+# TAB 2
 # =========================
-st.divider()
+with tab2:
+    st.subheader("Hour Recon Upload")
 
-with st.expander("What This Tool Does"):
-    st.write("""
-Processes Hour Recon data, builds aggregated pivot, and updates SHAP hours into structured reporting format.
-""")
+    file = st.file_uploader("Upload Excel (.xlsx)", type=["xlsx"])
+    st.caption(HOUR_RECON_COLUMNS)
 
-with st.expander("How to Use"):
-    st.write("""
-1. Upload Hour Recon file  
-2. Upload SHAP file (optional)  
-3. Click Run  
-4. Download final report  
-""")
+    if st.button("Run Upload + Pivot"):
+        if file:
+            try:
+                truncate_all()
+                process_and_upload_excel_strict(file)
+                build_and_upload_pivot_from_cloud()
+                st.success("Uploaded + Pivot Built")
+            except Exception as e:
+                st.error(str(e))
+        else:
+            st.error("Upload file")
 
-with st.expander("Output Details"):
-    st.write("""
-Final output contains aggregated data grouped by:
-Location → Customer → Order
+    st.divider()
 
-Includes:
-- Total Hours
-- Billing Metrics
-- SHAP splits (i, ii, iii)
-""")
+    if st.button("Delete Tables"):
+        try:
+            truncate_all()
+            st.warning("Tables Cleared")
+        except Exception as e:
+            st.error(str(e))
 
-with st.expander("Financial Logic"):
-    st.write("""
-Variance = Billed Hours − Performed Hours
+# =========================
+# TAB 3
+# =========================
+with tab3:
+    st.subheader("What This Tool Does")
+    st.write("Processes Hour Recon data, builds pivot, and integrates SHAP hours.")
 
-SHAP hours are allocated sequentially:
-- First upload → shap_hours_i
-- Second → shap_hours_ii
-- Third → shap_hours_iii
+    st.subheader("How to Use")
+    st.write("Upload files → Run → Download output")
 
-Maximum 3 uploads allowed per key.
-""")
+    st.subheader("Output Details")
+    st.write("Aggregated by Location → Customer → Order with SHAP splits.")
+
+    st.subheader("Financial Logic")
+    st.write("Variance = Billed Hours − Performed Hours. SHAP stored in 3 slots.")
