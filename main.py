@@ -68,6 +68,10 @@ def process_and_upload_excel_strict(file):
     df = df.replace({np.nan: None})
     df = df.drop_duplicates(subset=["location", "order_no", "wf_taskid"])
 
+    for col in ["location", "customer_code", "order_no"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip().str.lower()
+
     for i in range(0, len(df), 500):
         batch = df.iloc[i:i+500].to_dict(orient="records")
         supabase.table("hour_recon").insert(batch).execute()
@@ -151,6 +155,10 @@ def update_shap_hours_from_file(file):
         "shaphours":"shap_hours"
     })
 
+    for col in ["location", "customer_code", "order_no"]:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip().str.lower()
+    
     df["pivot_key"] = (
         df["location"].astype(str)+"_"+
         df["customer_code"].astype(str)+"_"+
@@ -242,7 +250,7 @@ with tab1:
 
     st.divider()
 
-    if st.button("Download Pivot"):
+    if st.button("Download Report"):
         try:
             df = download_pivot()
             st.download_button("Download Report", df.to_csv(index=False), "pivot.csv")
